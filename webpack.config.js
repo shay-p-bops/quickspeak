@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default (_env, argv) => ({
   mode: argv.mode ?? "production",
+  target: "web",
   devtool: argv.mode === "development" ? "inline-source-map" : false,
   entry: {
     background: "./src/background.js",
@@ -15,10 +16,8 @@ export default (_env, argv) => ({
   },
   resolve: {
     alias: {
-      "@huggingface/transformers": path.resolve(
-        __dirname,
-        "node_modules/@huggingface/transformers"
-      )
+      "onnxruntime-node$": false,
+      "sharp$": false
     }
   },
   output: {
