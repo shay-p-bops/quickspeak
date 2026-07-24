@@ -141,6 +141,85 @@ h1 {
   transition: width 160ms ease;
 }
 
+.mode-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid #ded8d1;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.mode-copy label {
+  display: block;
+  color: #3f3934;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.mode-copy p {
+  margin: 3px 0 0;
+  color: #817970;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch-track {
+  display: flex;
+  width: 48px;
+  height: 28px;
+  align-items: center;
+  padding: 3px;
+  border-radius: 999px;
+  background: #c9c1ba;
+  transition: background 150ms ease, opacity 150ms ease;
+}
+
+.switch-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(45, 41, 37, 0.24);
+  transition: transform 150ms ease;
+}
+
+.switch input:checked + .switch-track {
+  background: #af4a2a;
+}
+
+.switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(20px);
+}
+
+.switch input:focus-visible + .switch-track {
+  outline: 3px solid rgba(175, 74, 42, 0.28);
+  outline-offset: 3px;
+}
+
+.switch input:disabled + .switch-track {
+  cursor: wait;
+  opacity: 0.52;
+}
+
 .record-button {
   display: flex;
   width: 100%;
@@ -214,7 +293,7 @@ h1 {
 textarea {
   display: block;
   width: 100%;
-  min-height: 280px;
+  min-height: 260px;
   resize: vertical;
   border: 0;
   padding: 14px 18px 18px;
