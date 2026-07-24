@@ -9,10 +9,8 @@ import {
   normalizeLlmSettings,
   requestLlm
 } from "./llm.js";
-import { EncryptedSecretStore } from "./secret-store.js";
 
 let uiWindowId = null;
-const secretStore = new EncryptedSecretStore();
 const activeLlmRequests = new Map();
 
 function formatError(error) {
@@ -55,28 +53,11 @@ function abortAllLlmRequests() {
 
 async function handleLlmMessage(message) {
   if (message.type === "llm:get-settings") {
-    const settings = await getSavedLlmSettings();
-    return {
-      settings,
-      hasApiKey: await secretStore.has()
-    };
+    return { settings: await getSavedLlmSettings() };
   }
 
   if (message.type === "llm:save-settings") {
-    const settings = await saveLlmSettings(message.settings);
-    const apiKey = typeof message.apiKey === "string" ? message.apiKey.trim() : "";
-    if (apiKey) {
-      await secretStore.save(apiKey);
-    }
-    return {
-      settings,
-      hasApiKey: await secretStore.has()
-    };
-  }
-
-  if (message.type === "llm:delete-api-key") {
-    await secretStore.clear();
-    return { hasApiKey: false };
+    return { settings: await saveLlmSettings(message.settings) };
   }
 
   if (message.type === "llm:cancel") {
@@ -95,17 +76,22 @@ async function handleLlmMessage(message) {
       throw new Error("This LLM request is already running.");
     }
 
+    const apiKey = typeof message.apiKey === "string" ? message.apiKey.trim() : "";
+    if (!apiKey) {
+      throw new Error("Paste an API key before sending a request.");
+    }
+
     const settings = normalizeLlmSettings(message.settings);
     const controller = new AbortController();
     activeLlmRequests.set(requestId, controller);
     try {
-      const text = await secretStore.use((apiKey) => requestLlm({
+      const text = await requestLlm({
         vendor: settings.vendor,
         model: settings.model,
         input: message.input,
         apiKey,
         signal: controller.signal
-      }));
+      });
       return { text };
     } finally {
       activeLlmRequests.delete(requestId);
