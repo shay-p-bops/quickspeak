@@ -1,5 +1,11 @@
 import { decodeRecording, WHISPER_SAMPLE_RATE } from "./audio.js";
 import {
+  getModelLoadingStatus,
+  LazyModelWorker,
+  MODEL_CACHE_MARKER_KEY,
+  parseModelCacheMarker
+} from "./model-worker.js";
+import {
   appendTranscript,
   formatDictationText,
   LITERAL_MODE_STORAGE_KEY,
@@ -19,18 +25,23 @@ const characterCount = document.querySelector("#character-count");
 const literalModeToggle = document.querySelector("#literal-mode-toggle");
 const literalModeDescription = document.querySelector("#literal-mode-description");
 
-const worker = new Worker(chrome.runtime.getURL("transcription-worker.js"), {
-  type: "module"
+const pendingRequests = new Map();
+const modelWorker = new LazyModelWorker(() => {
+  const worker = new Worker(chrome.runtime.getURL("transcription-worker.js"), {
+    type: "module"
+  });
+  worker.addEventListener("message", handleWorkerMessage);
+  return worker;
 });
 
-const pendingRequests = new Map();
 let mediaRecorder = null;
 let mediaStream = null;
 let audioChunks = [];
 let recordingStartedAt = 0;
 let timerInterval = null;
-let mode = "loading";
+let mode = "idle";
 let modelReady = false;
+let modelCacheKnown = restoreModelCacheMarker();
 let literalModeForRecording = true;
 
 function setStatus(message, state = "neutral") {
@@ -83,6 +94,22 @@ function saveLiteralModePreference(enabled) {
   }
 }
 
+function restoreModelCacheMarker() {
+  try {
+    return parseModelCacheMarker(window.localStorage.getItem(MODEL_CACHE_MARKER_KEY));
+  } catch {
+    return false;
+  }
+}
+
+function saveModelCacheMarker() {
+  try {
+    window.localStorage.setItem(MODEL_CACHE_MARKER_KEY, "true");
+  } catch {
+    // This marker only improves status messaging; Transformers.js owns the real cache.
+  }
+}
+
 function updateLiteralModeDescription() {
   literalModeDescription.textContent = literalModeToggle.checked
     ? "Punctuation words stay exactly as spoken."
@@ -103,6 +130,10 @@ function stopTracks() {
     track.stop();
   }
   mediaStream = null;
+}
+
+function beginModelLoading() {
+  modelWorker.load();
 }
 
 async function startRecording() {
@@ -147,6 +178,7 @@ async function startRecording() {
     timerInterval = window.setInterval(updateTimer, 250);
     setMode("recording");
     setStatus("Listening… press Stop recording when finished.", "recording");
+    beginModelLoading();
   } catch (error) {
     stopTracks();
     const denied = error instanceof DOMException && error.name === "NotAllowedError";
@@ -177,7 +209,7 @@ function requestTranscription(audio) {
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     pendingRequests.set(requestId, { resolve, reject });
-    worker.postMessage(
+    modelWorker.transcribe(
       { type: "transcribe", requestId, audio },
       [audio.buffer]
     );
@@ -197,7 +229,7 @@ async function processRecording(mimeType) {
       throw new Error("The recording was too short. Try speaking for a little longer.");
     }
 
-    setStatus(modelReady ? "Transcribing locally…" : "Loading the speech model, then transcribing…");
+    setStatus(modelReady ? "Transcribing locally…" : getModelLoadingStatus({ cached: modelCacheKnown }));
     const rawText = await requestTranscription(audio);
     const text = formatDictationText(rawText, literalModeForRecording);
     transcript.value = appendTranscript(transcript.value, text);
@@ -248,36 +280,51 @@ literalModeToggle.addEventListener("change", () => {
 
 transcript.addEventListener("input", updateCharacterCount);
 
-worker.addEventListener("message", (event) => {
+function handleWorkerMessage(event) {
   const message = event.data;
 
   if (message?.type === "model-loading") {
-    if (mode === "loading" || mode === "idle") {
-      setStatus("Downloading the local speech model…");
-    }
     progressTrack.hidden = false;
+    setStatus(
+      getModelLoadingStatus({
+        cached: modelCacheKnown,
+        recording: mode === "recording"
+      }),
+      mode === "recording" ? "recording" : "neutral"
+    );
     return;
   }
 
   if (message?.type === "model-progress") {
     progressTrack.hidden = false;
     progressBar.style.width = `${message.progress}%`;
-    if (mode === "loading" || mode === "idle") {
-      setStatus(`Downloading the local speech model… ${message.progress}%`);
-    }
+    setStatus(
+      getModelLoadingStatus({
+        cached: modelCacheKnown,
+        progress: message.progress,
+        recording: mode === "recording"
+      }),
+      mode === "recording" ? "recording" : "neutral"
+    );
     return;
   }
 
   if (message?.type === "model-ready") {
     modelReady = true;
+    modelCacheKnown = true;
+    saveModelCacheMarker();
     progressBar.style.width = "100%";
     window.setTimeout(() => {
       progressTrack.hidden = true;
       progressBar.style.width = "0";
     }, 350);
-    if (mode === "loading" || mode === "idle") {
-      setStatus("Ready to record.", "ready");
-      setMode("idle");
+
+    if (mode === "recording") {
+      setStatus("Listening… cached speech model is ready.", "recording");
+    } else if (mode === "processing") {
+      setStatus("Transcribing locally…");
+    } else {
+      setStatus("Ready to record. Speech model is cached locally.", "ready");
     }
     return;
   }
@@ -297,22 +344,27 @@ worker.addEventListener("message", (event) => {
       return;
     }
 
+    modelReady = false;
     setStatus(
-      "The local speech model could not be loaded. Check your connection for the first download and reopen Quickspeak.",
+      "The speech model could not be loaded. Check your connection for the first download and try recording again.",
       "error"
     );
-    setMode("idle");
   }
-});
+}
 
 window.addEventListener("beforeunload", () => {
   window.clearInterval(timerInterval);
   stopTracks();
-  worker.terminate();
+  modelWorker.terminate();
 });
 
 literalModeToggle.checked = restoreLiteralModePreference();
 updateLiteralModeDescription();
 updateCharacterCount();
-setMode("loading");
-worker.postMessage({ type: "load" });
+setMode("idle");
+setStatus(
+  modelCacheKnown
+    ? "Ready to record. The cached speech model will load when needed."
+    : "Ready to record. The speech model will download only when first needed.",
+  "ready"
+);
