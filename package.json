@@ -1,8 +1,8 @@
 {
   "name": "quickspeak",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
-  "description": "A browser extension for local, editable speech-to-text.",
+  "description": "A browser extension for local speech-to-text and user-configured LLM communication.",
   "type": "module",
   "scripts": {
     "build": "webpack --mode production",
