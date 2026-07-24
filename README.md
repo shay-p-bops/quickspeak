@@ -9,6 +9,7 @@ Quickspeak is a Chromium browser extension that turns microphone audio into edit
 - Records microphone audio with a clear start/stop control and elapsed timer.
 - Transcribes speech on-device with Whisper through Transformers.js.
 - Keeps the transcript editable and appends later recordings without replacing manual corrections.
+- Includes a persisted **Literal mode** toggle. It is enabled by default and keeps punctuation words exactly as spoken. Turn it off to convert phrases such as “comma,” “question mark,” “new line,” brackets, and common symbols.
 - Copies the complete editor contents with one **Copy all** button.
 
 No page content is read, injected, or modified. The extension only opens its own UI.
@@ -37,6 +38,12 @@ Load the extension:
 
 Right-click anywhere in a page and select **quickspeak**. Chrome's context menu API also exposes the item on `file://` documents; no page-access permission is required.
 
+## Dictation modes
+
+**Literal mode** is on by default. Quickspeak preserves phrases such as “question mark” or “new line” as ordinary words. The toggle choice is remembered when the Quickspeak window is reopened.
+
+Turn Literal mode off to interpret spoken punctuation and symbols. Supported phrases include punctuation, new line/new paragraph, tabs, brackets, braces, parentheses, slash, dash, hash, dollar, percent, underscore, plus, equals, and common aliases.
+
 ## First transcription
 
 The first use downloads the quantized `onnx-community/whisper-tiny.en` model. The model is cached by the browser, and inference runs locally after audio is captured. Later sessions reuse the cached model.
@@ -52,9 +59,10 @@ npm test        # unit tests for audio, text, and extension configuration logic
 ## Architecture
 
 - `src/background.js` registers the context menu and opens/focuses the extension window.
-- `src/ui.js` handles recording, editing, copy behavior, and UI state.
+- `src/ui.js` handles recording, dictation mode persistence, editing, copy behavior, and UI state.
 - `src/transcription-worker.js` loads Whisper and runs transcription away from the UI thread.
 - `src/audio.js` decodes, mixes, and resamples captured audio to 16 kHz mono.
+- `src/text.js` appends transcripts and applies optional spoken punctuation formatting.
 
 ## Privacy
 
