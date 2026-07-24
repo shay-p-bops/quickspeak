@@ -33,9 +33,7 @@ const llmPanel = document.querySelector("#llm-panel");
 const llmVendor = document.querySelector("#llm-vendor");
 const llmModel = document.querySelector("#llm-model");
 const llmApiKey = document.querySelector("#llm-api-key");
-const apiKeyStatus = document.querySelector("#api-key-status");
 const saveLlmSettingsButton = document.querySelector("#save-llm-settings-button");
-const deleteApiKeyButton = document.querySelector("#delete-api-key-button");
 const llmPrompt = document.querySelector("#llm-prompt");
 const llmResponse = document.querySelector("#llm-response");
 const sendLlmButton = document.querySelector("#send-llm-button");
@@ -67,7 +65,6 @@ let modelReady = false;
 let modelCacheKnown = restoreModelCacheMarker();
 let literalModeForRecording = true;
 let llmSettingsLoaded = false;
-let hasSavedApiKey = false;
 let activeLlmRequestId = null;
 
 function setStatus(message, state = "neutral") {
@@ -169,21 +166,14 @@ function updateLlmActionState() {
   const hasPrompt = llmPrompt.value.trim().length > 0;
   const hasResponse = llmResponse.value.length > 0;
   const hasModel = llmModel.value.trim().length > 0;
-  const hasUsableKey = hasSavedApiKey || llmApiKey.value.trim().length > 0;
+  const hasApiKey = llmApiKey.value.trim().length > 0;
   const requesting = activeLlmRequestId !== null;
 
   copyPromptButton.disabled = !hasPrompt;
   clearPromptButton.disabled = !hasPrompt;
   copyResponseButton.disabled = !hasResponse;
   clearResponseButton.disabled = !hasResponse;
-  sendLlmButton.disabled = !hasPrompt || !hasModel || !hasUsableKey || requesting;
-}
-
-function updateApiKeyStatus() {
-  apiKeyStatus.textContent = hasSavedApiKey ? "API key saved" : "No API key saved";
-  apiKeyStatus.classList.toggle("saved", hasSavedApiKey);
-  deleteApiKeyButton.disabled = !hasSavedApiKey;
-  updateLlmActionState();
+  sendLlmButton.disabled = !hasPrompt || !hasModel || !hasApiKey || requesting;
 }
 
 function updateTimer() {
@@ -408,9 +398,8 @@ async function loadLlmSettings() {
   const settings = normalizeLlmSettings(response.settings);
   llmVendor.value = settings.vendor;
   llmModel.value = settings.model;
-  hasSavedApiKey = Boolean(response.hasApiKey);
   llmSettingsLoaded = true;
-  updateApiKeyStatus();
+  updateLlmActionState();
 }
 
 async function saveCurrentLlmSettings({ showFeedback = true, updateStatus = true } = {}) {
@@ -422,36 +411,18 @@ async function saveCurrentLlmSettings({ showFeedback = true, updateStatus = true
 
   const response = await sendRuntimeMessage({
     type: "llm:save-settings",
-    settings,
-    apiKey: llmApiKey.value
+    settings
   });
-  hasSavedApiKey = Boolean(response.hasApiKey);
-  llmApiKey.value = "";
-  updateApiKeyStatus();
+  const savedSettings = normalizeLlmSettings(response.settings);
+  llmVendor.value = savedSettings.vendor;
+  llmModel.value = savedSettings.model;
+  updateLlmActionState();
 
   if (showFeedback) {
     flashButtonFeedback(saveLlmSettingsButton, "Saved");
   }
   if (updateStatus) {
-    setStatus(
-      hasSavedApiKey
-        ? "LLM settings saved. The API key remains encrypted until a request is sent."
-        : "LLM settings saved. Paste an API key before sending a request.",
-      "ready"
-    );
-  }
-}
-
-async function deleteSavedApiKey() {
-  try {
-    await sendRuntimeMessage({ type: "llm:delete-api-key" });
-    hasSavedApiKey = false;
-    llmApiKey.value = "";
-    updateApiKeyStatus();
-    flashButtonFeedback(deleteApiKeyButton, "Removed");
-    setStatus("The saved API key was removed.", "ready");
-  } catch (error) {
-    setStatus(`Could not remove the API key: ${error.message}`, "error");
+    setStatus("Vendor and model settings saved. The API key remains only in this window.", "ready");
   }
 }
 
@@ -468,23 +439,24 @@ function cancelActiveLlmRequest() {
 
 async function sendLlmRequest() {
   const prompt = llmPrompt.value.trim();
+  const apiKey = llmApiKey.value.trim();
   if (!prompt || activeLlmRequestId) {
+    return;
+  }
+  if (!apiKey) {
+    setStatus("Paste an API key before sending a request.", "error");
+    llmApiKey.focus();
     return;
   }
 
   let completed = false;
   try {
-    if (llmApiKey.value.trim() || !hasSavedApiKey) {
-      await saveCurrentLlmSettings({ showFeedback: false, updateStatus: false });
-    }
-    if (!hasSavedApiKey) {
-      throw new Error("Paste and save an API key before sending a request.");
-    }
-
     const settings = normalizeLlmSettings({
       vendor: llmVendor.value,
       model: llmModel.value
     });
+    llmModel.value = settings.model;
+
     const requestId = crypto.randomUUID();
     activeLlmRequestId = requestId;
     setButtonBusy(sendLlmButton, true, "Sending…");
@@ -496,7 +468,8 @@ async function sendLlmRequest() {
       type: "llm:request",
       requestId,
       settings,
-      input: prompt
+      input: prompt,
+      apiKey: llmApiKey.value
     });
 
     llmResponse.value = response.text;
@@ -529,7 +502,6 @@ async function selectTab(nextTab) {
 
   if (activeTab === "llm") {
     cancelActiveLlmRequest();
-    llmApiKey.value = "";
   }
 
   activeTab = nextTab;
@@ -545,9 +517,7 @@ async function selectTab(nextTab) {
     try {
       await loadLlmSettings();
       setStatus(
-        hasSavedApiKey
-          ? "LLM mode ready. The saved key will only be decrypted after Send to LLM is pressed."
-          : "LLM mode ready. Add an API key before sending a request.",
+        "LLM mode ready. Paste an API key for this window, then send an explicit request.",
         "ready"
       );
       llmPrompt.focus();
@@ -597,9 +567,6 @@ saveLlmSettingsButton.addEventListener("click", () => {
   void saveCurrentLlmSettings().catch((error) => {
     setStatus(`Could not save LLM settings: ${error.message}`, "error");
   });
-});
-deleteApiKeyButton.addEventListener("click", () => {
-  void deleteSavedApiKey();
 });
 sendLlmButton.addEventListener("click", () => {
   void sendLlmRequest();
@@ -711,6 +678,7 @@ function handleWorkerMessage(event) {
 window.addEventListener("beforeunload", () => {
   window.clearInterval(timerInterval);
   cancelActiveLlmRequest();
+  llmApiKey.value = "";
   stopTracks();
   modelWorker.terminate();
 });
@@ -720,7 +688,7 @@ llmVendor.value = DEFAULT_LLM_SETTINGS.vendor;
 llmModel.value = DEFAULT_LLM_SETTINGS.model;
 updateLiteralModeDescription();
 updateCharacterCount();
-updateApiKeyStatus();
+updateLlmActionState();
 setMode("idle");
 setStatus(
   modelCacheKnown
