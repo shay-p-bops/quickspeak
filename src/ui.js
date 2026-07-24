@@ -11,10 +11,12 @@ import {
   LITERAL_MODE_STORAGE_KEY,
   parseLiteralModePreference
 } from "./text.js";
+import { DEFAULT_LLM_SETTINGS, normalizeLlmSettings } from "./llm.js";
 
 const recordButton = document.querySelector("#record-button");
 const recordLabel = document.querySelector("#record-label");
 const copyButton = document.querySelector("#copy-button");
+const clearTranscriptButton = document.querySelector("#clear-transcript-button");
 const transcript = document.querySelector("#transcript");
 const statusText = document.querySelector("#status-text");
 const statusIndicator = document.querySelector("#status-indicator");
@@ -24,8 +26,28 @@ const progressBar = document.querySelector("#progress-bar");
 const characterCount = document.querySelector("#character-count");
 const literalModeToggle = document.querySelector("#literal-mode-toggle");
 const literalModeDescription = document.querySelector("#literal-mode-description");
+const dictationTab = document.querySelector("#dictation-tab");
+const llmTab = document.querySelector("#llm-tab");
+const dictationPanel = document.querySelector("#dictation-panel");
+const llmPanel = document.querySelector("#llm-panel");
+const llmVendor = document.querySelector("#llm-vendor");
+const llmModel = document.querySelector("#llm-model");
+const llmApiKey = document.querySelector("#llm-api-key");
+const apiKeyStatus = document.querySelector("#api-key-status");
+const saveLlmSettingsButton = document.querySelector("#save-llm-settings-button");
+const deleteApiKeyButton = document.querySelector("#delete-api-key-button");
+const llmPrompt = document.querySelector("#llm-prompt");
+const llmResponse = document.querySelector("#llm-response");
+const sendLlmButton = document.querySelector("#send-llm-button");
+const copyPromptButton = document.querySelector("#copy-prompt-button");
+const clearPromptButton = document.querySelector("#clear-prompt-button");
+const copyResponseButton = document.querySelector("#copy-response-button");
+const clearResponseButton = document.querySelector("#clear-response-button");
+const responseState = document.querySelector("#response-state");
+const actionAnnouncer = document.querySelector("#action-announcer");
 
 const pendingRequests = new Map();
+const feedbackTimers = new WeakMap();
 const modelWorker = new LazyModelWorker(() => {
   const worker = new Worker(chrome.runtime.getURL("transcription-worker.js"), {
     type: "module"
@@ -40,9 +62,13 @@ let audioChunks = [];
 let recordingStartedAt = 0;
 let timerInterval = null;
 let mode = "idle";
+let activeTab = "dictation";
 let modelReady = false;
 let modelCacheKnown = restoreModelCacheMarker();
 let literalModeForRecording = true;
+let llmSettingsLoaded = false;
+let hasSavedApiKey = false;
+let activeLlmRequestId = null;
 
 function setStatus(message, state = "neutral") {
   statusText.textContent = message;
@@ -50,6 +76,72 @@ function setStatus(message, state = "neutral") {
   if (state !== "neutral") {
     statusIndicator.classList.add(state);
   }
+}
+
+function announce(message) {
+  actionAnnouncer.textContent = "";
+  window.requestAnimationFrame(() => {
+    actionAnnouncer.textContent = message;
+  });
+}
+
+function getButtonLabel(button) {
+  return button.querySelector("[data-button-label]");
+}
+
+function restoreButtonLabel(button) {
+  const label = getButtonLabel(button);
+  if (label?.dataset.defaultLabel) {
+    label.textContent = label.dataset.defaultLabel;
+  }
+}
+
+function flashButtonFeedback(button, message, duration = 1200) {
+  const label = getButtonLabel(button);
+  if (label && !label.dataset.defaultLabel) {
+    label.dataset.defaultLabel = label.textContent;
+  }
+
+  window.clearTimeout(feedbackTimers.get(button));
+  if (label) {
+    label.textContent = message;
+  }
+  button.classList.add("feedback-success");
+  announce(message);
+
+  feedbackTimers.set(button, window.setTimeout(() => {
+    restoreButtonLabel(button);
+    button.classList.remove("feedback-success");
+    feedbackTimers.delete(button);
+  }, duration));
+}
+
+function setButtonBusy(button, busy, busyLabel) {
+  const label = getButtonLabel(button);
+  if (label && !label.dataset.defaultLabel) {
+    label.dataset.defaultLabel = label.textContent;
+  }
+  if (label) {
+    label.textContent = busy ? busyLabel : label.dataset.defaultLabel;
+  }
+  button.setAttribute("aria-busy", String(busy));
+}
+
+function sendRuntimeMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      const runtimeError = chrome.runtime.lastError;
+      if (runtimeError) {
+        reject(new Error(runtimeError.message));
+        return;
+      }
+      if (!response?.ok) {
+        reject(new Error(response?.error || "The extension background worker did not return a result."));
+        return;
+      }
+      resolve(response);
+    });
+  });
 }
 
 function setMode(nextMode) {
@@ -62,6 +154,7 @@ function setMode(nextMode) {
   recordLabel.textContent = recording ? "Stop recording" : "Record";
   recordButton.disabled = processing;
   literalModeToggle.disabled = recording || processing;
+  llmTab.disabled = recording || processing;
   timer.hidden = !recording;
 }
 
@@ -69,6 +162,28 @@ function updateCharacterCount() {
   const count = transcript.value.length;
   characterCount.textContent = `${count.toLocaleString()} ${count === 1 ? "character" : "characters"}`;
   copyButton.disabled = count === 0;
+  clearTranscriptButton.disabled = count === 0;
+}
+
+function updateLlmActionState() {
+  const hasPrompt = llmPrompt.value.trim().length > 0;
+  const hasResponse = llmResponse.value.length > 0;
+  const hasModel = llmModel.value.trim().length > 0;
+  const hasUsableKey = hasSavedApiKey || llmApiKey.value.trim().length > 0;
+  const requesting = activeLlmRequestId !== null;
+
+  copyPromptButton.disabled = !hasPrompt;
+  clearPromptButton.disabled = !hasPrompt;
+  copyResponseButton.disabled = !hasResponse;
+  clearResponseButton.disabled = !hasResponse;
+  sendLlmButton.disabled = !hasPrompt || !hasModel || !hasUsableKey || requesting;
+}
+
+function updateApiKeyStatus() {
+  apiKeyStatus.textContent = hasSavedApiKey ? "API key saved" : "No API key saved";
+  apiKeyStatus.classList.toggle("saved", hasSavedApiKey);
+  deleteApiKeyButton.disabled = !hasSavedApiKey;
+  updateLlmActionState();
 }
 
 function updateTimer() {
@@ -253,6 +368,203 @@ async function processRecording(mimeType) {
   }
 }
 
+async function copyTextarea(button, textarea, successMessage) {
+  if (!textarea.value) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(textarea.value);
+    flashButtonFeedback(button, "Copied");
+    setStatus(successMessage, "ready");
+  } catch (error) {
+    setStatus(
+      `Could not copy: ${error instanceof Error ? error.message : String(error)}`,
+      "error"
+    );
+  }
+}
+
+function clearTextarea(button, textarea, successMessage) {
+  if (!textarea.value) {
+    return;
+  }
+  textarea.value = "";
+  textarea.focus();
+  flashButtonFeedback(button, "Cleared");
+  setStatus(successMessage, "ready");
+  updateCharacterCount();
+  updateLlmActionState();
+  if (textarea === llmResponse) {
+    responseState.textContent = "No response yet";
+  }
+}
+
+async function loadLlmSettings() {
+  if (llmSettingsLoaded) {
+    return;
+  }
+
+  const response = await sendRuntimeMessage({ type: "llm:get-settings" });
+  const settings = normalizeLlmSettings(response.settings);
+  llmVendor.value = settings.vendor;
+  llmModel.value = settings.model;
+  hasSavedApiKey = Boolean(response.hasApiKey);
+  llmSettingsLoaded = true;
+  updateApiKeyStatus();
+}
+
+async function saveCurrentLlmSettings({ showFeedback = true, updateStatus = true } = {}) {
+  const settings = normalizeLlmSettings({
+    vendor: llmVendor.value,
+    model: llmModel.value
+  });
+  llmModel.value = settings.model;
+
+  const response = await sendRuntimeMessage({
+    type: "llm:save-settings",
+    settings,
+    apiKey: llmApiKey.value
+  });
+  hasSavedApiKey = Boolean(response.hasApiKey);
+  llmApiKey.value = "";
+  updateApiKeyStatus();
+
+  if (showFeedback) {
+    flashButtonFeedback(saveLlmSettingsButton, "Saved");
+  }
+  if (updateStatus) {
+    setStatus(
+      hasSavedApiKey
+        ? "LLM settings saved. The API key remains encrypted until a request is sent."
+        : "LLM settings saved. Paste an API key before sending a request.",
+      "ready"
+    );
+  }
+}
+
+async function deleteSavedApiKey() {
+  try {
+    await sendRuntimeMessage({ type: "llm:delete-api-key" });
+    hasSavedApiKey = false;
+    llmApiKey.value = "";
+    updateApiKeyStatus();
+    flashButtonFeedback(deleteApiKeyButton, "Removed");
+    setStatus("The saved API key was removed.", "ready");
+  } catch (error) {
+    setStatus(`Could not remove the API key: ${error.message}`, "error");
+  }
+}
+
+function cancelActiveLlmRequest() {
+  if (!activeLlmRequestId) {
+    return;
+  }
+  const requestId = activeLlmRequestId;
+  activeLlmRequestId = null;
+  void sendRuntimeMessage({ type: "llm:cancel", requestId }).catch(() => undefined);
+  setButtonBusy(sendLlmButton, false, "Sending…");
+  updateLlmActionState();
+}
+
+async function sendLlmRequest() {
+  const prompt = llmPrompt.value.trim();
+  if (!prompt || activeLlmRequestId) {
+    return;
+  }
+
+  let completed = false;
+  try {
+    if (llmApiKey.value.trim() || !hasSavedApiKey) {
+      await saveCurrentLlmSettings({ showFeedback: false, updateStatus: false });
+    }
+    if (!hasSavedApiKey) {
+      throw new Error("Paste and save an API key before sending a request.");
+    }
+
+    const settings = normalizeLlmSettings({
+      vendor: llmVendor.value,
+      model: llmModel.value
+    });
+    const requestId = crypto.randomUUID();
+    activeLlmRequestId = requestId;
+    setButtonBusy(sendLlmButton, true, "Sending…");
+    updateLlmActionState();
+    responseState.textContent = "Waiting for the model…";
+    setStatus(`Sending to ${llmVendor.options[llmVendor.selectedIndex].text} using ${settings.model}…`);
+
+    const response = await sendRuntimeMessage({
+      type: "llm:request",
+      requestId,
+      settings,
+      input: prompt
+    });
+
+    llmResponse.value = response.text;
+    responseState.textContent = "Response ready";
+    setStatus("LLM response ready.", "ready");
+    completed = true;
+  } catch (error) {
+    const cancelled = /cancelled/i.test(error.message);
+    responseState.textContent = cancelled ? "Request cancelled" : "Request failed";
+    if (activeTab === "llm") {
+      setStatus(
+        cancelled ? "The LLM request was cancelled." : `LLM request failed: ${error.message}`,
+        cancelled ? "neutral" : "error"
+      );
+    }
+  } finally {
+    activeLlmRequestId = null;
+    setButtonBusy(sendLlmButton, false, "Sending…");
+    updateLlmActionState();
+    if (completed) {
+      flashButtonFeedback(sendLlmButton, "Sent");
+    }
+  }
+}
+
+async function selectTab(nextTab) {
+  if (nextTab === activeTab || (nextTab === "llm" && mode !== "idle")) {
+    return;
+  }
+
+  if (activeTab === "llm") {
+    cancelActiveLlmRequest();
+    llmApiKey.value = "";
+  }
+
+  activeTab = nextTab;
+  const llmActive = nextTab === "llm";
+  dictationTab.classList.toggle("active", !llmActive);
+  dictationTab.setAttribute("aria-selected", String(!llmActive));
+  llmTab.classList.toggle("active", llmActive);
+  llmTab.setAttribute("aria-selected", String(llmActive));
+  dictationPanel.hidden = llmActive;
+  llmPanel.hidden = !llmActive;
+
+  if (llmActive) {
+    try {
+      await loadLlmSettings();
+      setStatus(
+        hasSavedApiKey
+          ? "LLM mode ready. The saved key will only be decrypted after Send to LLM is pressed."
+          : "LLM mode ready. Add an API key before sending a request.",
+        "ready"
+      );
+      llmPrompt.focus();
+    } catch (error) {
+      setStatus(`Could not load LLM settings: ${error.message}`, "error");
+    }
+  } else {
+    setStatus(
+      modelCacheKnown
+        ? "Ready to record. The cached speech model will load when needed."
+        : "Ready to record. The speech model will download only when first needed.",
+      "ready"
+    );
+    recordButton.focus();
+  }
+}
+
 recordButton.addEventListener("click", () => {
   if (mode === "recording") {
     stopRecording();
@@ -261,16 +573,43 @@ recordButton.addEventListener("click", () => {
   }
 });
 
-copyButton.addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(transcript.value);
-    setStatus("Copied the full transcript.", "ready");
-  } catch (error) {
-    setStatus(
-      `Could not copy: ${error instanceof Error ? error.message : String(error)}`,
-      "error"
-    );
-  }
+copyButton.addEventListener("click", () => {
+  void copyTextarea(copyButton, transcript, "Copied the full transcript.");
+});
+clearTranscriptButton.addEventListener("click", () => {
+  clearTextarea(clearTranscriptButton, transcript, "Transcript cleared.");
+});
+
+copyPromptButton.addEventListener("click", () => {
+  void copyTextarea(copyPromptButton, llmPrompt, "Copied the full prompt.");
+});
+clearPromptButton.addEventListener("click", () => {
+  clearTextarea(clearPromptButton, llmPrompt, "Prompt cleared.");
+});
+copyResponseButton.addEventListener("click", () => {
+  void copyTextarea(copyResponseButton, llmResponse, "Copied the full LLM response.");
+});
+clearResponseButton.addEventListener("click", () => {
+  clearTextarea(clearResponseButton, llmResponse, "LLM response cleared.");
+});
+
+saveLlmSettingsButton.addEventListener("click", () => {
+  void saveCurrentLlmSettings().catch((error) => {
+    setStatus(`Could not save LLM settings: ${error.message}`, "error");
+  });
+});
+deleteApiKeyButton.addEventListener("click", () => {
+  void deleteSavedApiKey();
+});
+sendLlmButton.addEventListener("click", () => {
+  void sendLlmRequest();
+});
+
+dictationTab.addEventListener("click", () => {
+  void selectTab("dictation");
+});
+llmTab.addEventListener("click", () => {
+  void selectTab("llm");
 });
 
 literalModeToggle.addEventListener("change", () => {
@@ -279,6 +618,23 @@ literalModeToggle.addEventListener("change", () => {
 });
 
 transcript.addEventListener("input", updateCharacterCount);
+llmPrompt.addEventListener("input", updateLlmActionState);
+llmResponse.addEventListener("input", updateLlmActionState);
+llmModel.addEventListener("input", updateLlmActionState);
+llmApiKey.addEventListener("input", updateLlmActionState);
+
+// Every clickable button receives immediate visual press feedback, even when the
+// action itself completes asynchronously.
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button || button.disabled) {
+    return;
+  }
+  button.classList.remove("button-pressed");
+  void button.offsetWidth;
+  button.classList.add("button-pressed");
+  window.setTimeout(() => button.classList.remove("button-pressed"), 180);
+});
 
 function handleWorkerMessage(event) {
   const message = event.data;
@@ -323,7 +679,7 @@ function handleWorkerMessage(event) {
       setStatus("Listening… cached speech model is ready.", "recording");
     } else if (mode === "processing") {
       setStatus("Transcribing locally…");
-    } else {
+    } else if (activeTab === "dictation") {
       setStatus("Ready to record. Speech model is cached locally.", "ready");
     }
     return;
@@ -354,13 +710,17 @@ function handleWorkerMessage(event) {
 
 window.addEventListener("beforeunload", () => {
   window.clearInterval(timerInterval);
+  cancelActiveLlmRequest();
   stopTracks();
   modelWorker.terminate();
 });
 
 literalModeToggle.checked = restoreLiteralModePreference();
+llmVendor.value = DEFAULT_LLM_SETTINGS.vendor;
+llmModel.value = DEFAULT_LLM_SETTINGS.model;
 updateLiteralModeDescription();
 updateCharacterCount();
+updateApiKeyStatus();
 setMode("idle");
 setStatus(
   modelCacheKnown
