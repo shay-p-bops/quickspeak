@@ -34,6 +34,13 @@ test("button feedback and cancellation handlers are wired", () => {
   assert.match(uiJs, /llm:cancel/);
 });
 
+test("API key UI is session-only", () => {
+  assert.match(uiHtml, /id="llm-api-key"/);
+  assert.match(uiHtml, /not stored/i);
+  assert.doesNotMatch(uiHtml, /Remove key|API key saved|encrypted at rest/i);
+  assert.doesNotMatch(uiJs, /deleteSavedApiKey|hasSavedApiKey/);
+});
+
 test("manifest grants storage and OpenAI host access", () => {
   assert.ok(manifest.permissions.includes("storage"));
   assert.ok(manifest.host_permissions.includes("https://api.openai.com/*"));
