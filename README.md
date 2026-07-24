@@ -13,9 +13,9 @@ Quickspeak is a Chromium browser extension that turns microphone audio into edit
 - Keeps the transcript editable and appends later recordings without replacing manual corrections.
 - Includes a persisted **Literal mode** toggle. It is enabled by default and keeps punctuation words exactly as spoken. Turn it off to convert phrases such as “comma,” “question mark,” “new line,” brackets, and common symbols.
 - Adds one-click **Clear** and **Copy all** actions to transcript, prompt, and response text areas.
-- Gives immediate press feedback on every button and success feedback for copy, clear, save, remove, and send actions.
+- Gives immediate press feedback on every button and success feedback for copy, clear, save, and send actions.
 - Supports OpenAI as the first LLM vendor, with `gpt-5.5` as the default editable model name.
-- Saves the API key as AES-GCM ciphertext. The non-extractable encryption key is stored through IndexedDB, while plaintext is only available inside the background worker for an explicit request.
+- Keeps the API key only in the open Quickspeak window. It is never written to extension storage, IndexedDB, or local storage.
 
 No page content is read, injected, or modified. The extension only opens its own UI.
 
@@ -51,11 +51,11 @@ Turn Literal mode off to interpret spoken punctuation and symbols. Supported phr
 
 ## LLM mode
 
-Open the **LLM** tab, choose the vendor, enter a model name, and paste an API key. Saving settings encrypts the key before it is written to extension storage. A saved plaintext key is never sent back to the UI or restored into the password input.
+Open the **LLM** tab, choose the vendor, enter a model name, and paste an API key. Vendor and model preferences can be saved, but the API key is session-only and remains in the password field only while that Quickspeak window is open.
 
-Prompts are sent only after **Send to LLM** is pressed. The background service worker decrypts the key immediately before the request and discards its plaintext reference after the request completes. Leaving LLM mode or closing the Quickspeak window cancels an active request.
+Prompts are sent only after **Send to LLM** is pressed. The API key is passed to the background service worker with that explicit request and is not persisted. Closing Quickspeak discards the field value, so the user must enter the key again the next time the extension window opens. Leaving LLM mode or closing the window cancels an active request.
 
-The first vendor implementation calls the OpenAI Responses API directly from the extension. Encryption at rest reduces local storage exposure, but a browser extension cannot provide the same secret isolation as a server-side proxy. Use a dedicated, restricted key and monitor its usage. A backend proxy is recommended for shared or production deployments.
+The first vendor implementation calls the OpenAI Responses API directly from the extension. Use a dedicated, restricted key and monitor its usage. A backend proxy is recommended for shared or production deployments.
 
 ## Speech model caching
 
@@ -68,15 +68,14 @@ The first transcription downloads the quantized `onnx-community/whisper-tiny.en`
 ```bash
 npm run build   # production extension bundle
 npm run dev     # rebuild on source changes
-npm test        # unit tests for audio, text, model loading, LLM helpers, encryption, and extension configuration
+npm test        # unit tests for audio, text, model loading, LLM helpers, and extension configuration
 ```
 
 ## Architecture
 
-- `src/background.js` registers the context menu, opens/focuses the extension window, stores LLM settings, decrypts the API key only for explicit requests, and performs vendor calls.
-- `src/ui.js` handles tabs, recording, dictation mode persistence, editing, LLM controls, copy/clear behavior, and button feedback.
+- `src/background.js` registers the context menu, opens/focuses the extension window, stores non-secret LLM settings, performs explicit vendor calls, and cancels active requests.
+- `src/ui.js` handles tabs, recording, dictation mode persistence, editing, session-only API-key input, LLM controls, copy/clear behavior, and button feedback.
 - `src/llm.js` validates LLM settings, builds OpenAI requests, and parses Responses API output.
-- `src/secret-store.js` manages AES-GCM encryption and the non-extractable IndexedDB key.
 - `src/model-worker.js` creates the transcription worker lazily and prevents duplicate load requests.
 - `src/transcription-worker.js` loads Whisper and runs transcription away from the UI thread.
 - `src/audio.js` decodes, mixes, and resamples captured audio to 16 kHz mono.
@@ -84,4 +83,4 @@ npm test        # unit tests for audio, text, model loading, LLM helpers, encryp
 
 ## Privacy
 
-Recorded audio is sent only to the local transcription worker. LLM prompt text is sent only when the user explicitly presses **Send to LLM**, and only to the selected vendor. Quickspeak does not include analytics, page injection, or remote JavaScript. ONNX Runtime's executable JavaScript and WebAssembly assets are bundled with the extension. The model files are downloaded from Hugging Face on first use and then cached locally by the browser.
+Recorded audio is sent only to the local transcription worker. LLM prompt text and the session API key are sent only when the user explicitly presses **Send to LLM**, and only to the selected vendor. The API key is not stored by Quickspeak. Quickspeak does not include analytics, page injection, or remote JavaScript. ONNX Runtime's executable JavaScript and WebAssembly assets are bundled with the extension. The model files are downloaded from Hugging Face on first use and then cached locally by the browser.
