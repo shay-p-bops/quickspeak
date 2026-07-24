@@ -32,6 +32,25 @@
         </div>
       </section>
 
+      <section class="mode-card">
+        <div class="mode-copy">
+          <label for="literal-mode-toggle">Literal mode</label>
+          <p id="literal-mode-description">Punctuation words stay exactly as spoken.</p>
+        </div>
+        <label class="switch" aria-label="Literal mode">
+          <input
+            id="literal-mode-toggle"
+            type="checkbox"
+            role="switch"
+            aria-describedby="literal-mode-description"
+            checked
+          />
+          <span class="switch-track" aria-hidden="true">
+            <span class="switch-thumb"></span>
+          </span>
+        </label>
+      </section>
+
       <button id="record-button" class="record-button" type="button" aria-pressed="false">
         <span class="record-icon" aria-hidden="true"></span>
         <span id="record-label">Record</span>
