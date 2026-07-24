@@ -130,7 +130,6 @@
               <h2>LLM settings</h2>
               <p>Configure the provider used for explicit requests.</p>
             </div>
-            <span id="api-key-status" class="key-status">No API key saved</span>
           </div>
 
           <div class="field-grid">
@@ -153,21 +152,18 @@
               type="password"
               autocomplete="off"
               spellcheck="false"
-              placeholder="Paste a new key to save or replace the current key"
+              placeholder="Paste your API key for this session"
             />
           </label>
 
           <div class="settings-actions">
-            <button id="delete-api-key-button" class="secondary-button danger-button" type="button" disabled>
-              <span data-button-label>Remove key</span>
-            </button>
             <button id="save-llm-settings-button" class="secondary-button" type="button">
-              <span data-button-label>Save settings</span>
+              <span data-button-label>Save model settings</span>
             </button>
           </div>
 
           <p class="security-note">
-            The saved key is AES-GCM encrypted at rest and is only decrypted in the background for an explicit LLM request. The plaintext key is never restored into this form.
+            Your API key is kept only in this open Quickspeak window and is not stored. Closing the window discards it, so you will need to enter it again next time.
           </p>
         </section>
 
@@ -236,7 +232,7 @@
         </section>
 
         <p class="privacy-note">
-          LLM prompts and responses are sent directly between this extension and the selected vendor. For shared or production deployments, a server-side proxy provides stronger API-key isolation.
+          LLM prompts, the session API key, and responses are sent directly between this extension and the selected vendor only after you press Send to LLM.
         </p>
       </section>
 
