@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Quickspeak v0.1.2</title>
+    <title>Quickspeak v0.2.0</title>
     <link rel="stylesheet" href="ui.css" />
   </head>
   <body>
@@ -17,9 +17,32 @@
         </div>
         <div>
           <h1>Quickspeak</h1>
-          <p>Speak, review, and copy.</p>
+          <p>Speak locally or communicate with an LLM.</p>
         </div>
       </header>
+
+      <div class="mode-tabs" role="tablist" aria-label="Quickspeak mode">
+        <button
+          id="dictation-tab"
+          class="mode-tab active"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="dictation-panel"
+        >
+          Dictation
+        </button>
+        <button
+          id="llm-tab"
+          class="mode-tab"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="llm-panel"
+        >
+          LLM
+        </button>
+      </div>
 
       <section class="status-card" aria-live="polite">
         <div class="status-row">
@@ -32,52 +55,188 @@
         </div>
       </section>
 
-      <section class="mode-card">
-        <div class="mode-copy">
-          <label for="literal-mode-toggle">Literal mode</label>
-          <p id="literal-mode-description">Punctuation words stay exactly as spoken.</p>
-        </div>
-        <label class="switch" aria-label="Literal mode">
-          <input
-            id="literal-mode-toggle"
-            type="checkbox"
-            role="switch"
-            aria-describedby="literal-mode-description"
-            checked
-          />
-          <span class="switch-track" aria-hidden="true">
-            <span class="switch-thumb"></span>
-          </span>
-        </label>
+      <section
+        id="dictation-panel"
+        class="tab-panel"
+        role="tabpanel"
+        aria-labelledby="dictation-tab"
+      >
+        <section class="mode-card">
+          <div class="mode-copy">
+            <label for="literal-mode-toggle">Literal mode</label>
+            <p id="literal-mode-description">Punctuation words stay exactly as spoken.</p>
+          </div>
+          <label class="switch" aria-label="Literal mode">
+            <input
+              id="literal-mode-toggle"
+              type="checkbox"
+              role="switch"
+              aria-describedby="literal-mode-description"
+              checked
+            />
+            <span class="switch-track" aria-hidden="true">
+              <span class="switch-thumb"></span>
+            </span>
+          </label>
+        </section>
+
+        <button id="record-button" class="record-button" type="button" aria-pressed="false">
+          <span class="record-icon" aria-hidden="true"></span>
+          <span id="record-label">Record</span>
+        </button>
+
+        <section class="text-panel">
+          <label for="transcript">Transcript</label>
+          <textarea
+            id="transcript"
+            spellcheck="true"
+            placeholder="Your speech will appear here. You can edit it before copying."
+          ></textarea>
+          <div class="text-panel-footer">
+            <span id="character-count">0 characters</span>
+            <div class="text-actions">
+              <button id="clear-transcript-button" class="text-action-button" type="button" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 5l14 14M19 5 5 19" />
+                </svg>
+                <span data-button-label>Clear</span>
+              </button>
+              <button id="copy-button" class="text-action-button" type="button" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 8h11v11H8z" />
+                  <path d="M5 16H4V4h12v1" />
+                </svg>
+                <span data-button-label>Copy all</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <p class="privacy-note">
+          Audio is transcribed on this device. The speech model is downloaded once and cached by the browser.
+        </p>
       </section>
 
-      <button id="record-button" class="record-button" type="button" aria-pressed="false">
-        <span class="record-icon" aria-hidden="true"></span>
-        <span id="record-label">Record</span>
-      </button>
+      <section
+        id="llm-panel"
+        class="tab-panel"
+        role="tabpanel"
+        aria-labelledby="llm-tab"
+        hidden
+      >
+        <section class="settings-card">
+          <div class="settings-heading">
+            <div>
+              <h2>LLM settings</h2>
+              <p>Configure the provider used for explicit requests.</p>
+            </div>
+          </div>
 
-      <section class="transcript-panel">
-        <label for="transcript">Transcript</label>
-        <textarea
-          id="transcript"
-          spellcheck="true"
-          placeholder="Your speech will appear here. You can edit it before copying."
-        ></textarea>
-        <div class="transcript-footer">
-          <span id="character-count">0 characters</span>
-          <button id="copy-button" class="copy-button" type="button" disabled>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M8 8h11v11H8z" />
-              <path d="M5 16H4V4h12v1" />
-            </svg>
-            <span>Copy all</span>
-          </button>
-        </div>
+          <div class="field-grid">
+            <label class="field">
+              <span>Vendor</span>
+              <select id="llm-vendor">
+                <option value="openai">OpenAI</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Model</span>
+              <input id="llm-model" type="text" value="gpt-5.5" spellcheck="false" />
+            </label>
+          </div>
+
+          <label class="field api-key-field">
+            <span>API key</span>
+            <input
+              id="llm-api-key"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Paste your API key for this session"
+            />
+          </label>
+
+          <div class="settings-actions">
+            <button id="save-llm-settings-button" class="secondary-button" type="button">
+              <span data-button-label>Save model settings</span>
+            </button>
+          </div>
+
+          <p class="security-note">
+            Your API key is kept only in this open Quickspeak window and is not stored. Closing the window discards it, so you will need to enter it again next time.
+          </p>
+        </section>
+
+        <section class="text-panel llm-text-panel">
+          <label for="llm-prompt">Prompt</label>
+          <textarea
+            id="llm-prompt"
+            class="compact-textarea"
+            spellcheck="true"
+            placeholder="Type or paste the message you want to send."
+          ></textarea>
+          <div class="text-panel-footer">
+            <span>Sent only when you press Send to LLM</span>
+            <div class="text-actions">
+              <button id="clear-prompt-button" class="text-action-button" type="button" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 5l14 14M19 5 5 19" />
+                </svg>
+                <span data-button-label>Clear</span>
+              </button>
+              <button id="copy-prompt-button" class="text-action-button" type="button" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 8h11v11H8z" />
+                  <path d="M5 16H4V4h12v1" />
+                </svg>
+                <span data-button-label>Copy all</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <button id="send-llm-button" class="send-button" type="button" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m4 4 16 8-16 8 3-8-3-8Z" />
+            <path d="M7 12h13" />
+          </svg>
+          <span data-button-label>Send to LLM</span>
+        </button>
+
+        <section class="text-panel llm-text-panel">
+          <label for="llm-response">Response</label>
+          <textarea
+            id="llm-response"
+            class="compact-textarea"
+            readonly
+            placeholder="The model response will appear here."
+          ></textarea>
+          <div class="text-panel-footer">
+            <span id="response-state">No response yet</span>
+            <div class="text-actions">
+              <button id="clear-response-button" class="text-action-button" type="button" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 5l14 14M19 5 5 19" />
+                </svg>
+                <span data-button-label>Clear</span>
+              </button>
+              <button id="copy-response-button" class="text-action-button" type="button" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 8h11v11H8z" />
+                  <path d="M5 16H4V4h12v1" />
+                </svg>
+                <span data-button-label>Copy all</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <p class="privacy-note">
+          LLM prompts, the session API key, and responses are sent directly between this extension and the selected vendor only after you press Send to LLM.
+        </p>
       </section>
 
-      <p class="privacy-note">
-        Audio is transcribed on this device. The speech model is downloaded once and cached by the browser.
-      </p>
+      <p id="action-announcer" class="visually-hidden" aria-live="polite"></p>
     </main>
   </body>
 </html>
