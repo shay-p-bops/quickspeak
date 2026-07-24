@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quickspeak</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <path d="M12 14.5a4 4 0 0 0 4-4V6a4 4 0 1 0-8 0v4.5a4 4 0 0 0 4 4Z" />
+            <path d="M5.5 10.5a6.5 6.5 0 0 0 13 0M12 17v4M9 21h6" />
+          </svg>
+        </div>
+        <div>
+          <h1>Quickspeak</h1>
+          <p>Speak, review, and copy.</p>
+        </div>
+      </header>
+
+      <section class="status-card" aria-live="polite">
+        <div class="status-row">
+          <span id="status-indicator" class="status-indicator" aria-hidden="true"></span>
+          <span id="status-text">Preparing the local speech model…</span>
+          <span id="timer" class="timer" hidden>00:00</span>
+        </div>
+        <div id="progress-track" class="progress-track" hidden>
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+      </section>
+
+      <button id="record-button" class="record-button" type="button" aria-pressed="false">
+        <span class="record-icon" aria-hidden="true"></span>
+        <span id="record-label">Record</span>
+      </button>
+
+      <section class="transcript-panel">
+        <label for="transcript">Transcript</label>
+        <textarea
+          id="transcript"
+          spellcheck="true"
+          placeholder="Your speech will appear here. You can edit it before copying."
+        ></textarea>
+        <div class="transcript-footer">
+          <span id="character-count">0 characters</span>
+          <button id="copy-button" class="copy-button" type="button" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 8h11v11H8z" />
+              <path d="M5 16H4V4h12v1" />
+            </svg>
+            <span>Copy all</span>
+          </button>
+        </div>
+      </section>
+
+      <p class="privacy-note">
+        Audio is transcribed on this device. The speech model is downloaded once and cached by the browser.
+      </p>
+    </main>
+  </body>
+</html>
