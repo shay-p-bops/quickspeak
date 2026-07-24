@@ -1,5 +1,10 @@
 import { decodeRecording, WHISPER_SAMPLE_RATE } from "./audio.js";
-import { appendTranscript } from "./text.js";
+import {
+  appendTranscript,
+  formatDictationText,
+  LITERAL_MODE_STORAGE_KEY,
+  parseLiteralModePreference
+} from "./text.js";
 
 const recordButton = document.querySelector("#record-button");
 const recordLabel = document.querySelector("#record-label");
@@ -11,6 +16,8 @@ const timer = document.querySelector("#timer");
 const progressTrack = document.querySelector("#progress-track");
 const progressBar = document.querySelector("#progress-bar");
 const characterCount = document.querySelector("#character-count");
+const literalModeToggle = document.querySelector("#literal-mode-toggle");
+const literalModeDescription = document.querySelector("#literal-mode-description");
 
 const worker = new Worker(chrome.runtime.getURL("transcription-worker.js"), {
   type: "module"
@@ -24,6 +31,7 @@ let recordingStartedAt = 0;
 let timerInterval = null;
 let mode = "loading";
 let modelReady = false;
+let literalModeForRecording = true;
 
 function setStatus(message, state = "neutral") {
   statusText.textContent = message;
@@ -42,6 +50,7 @@ function setMode(nextMode) {
   recordButton.setAttribute("aria-pressed", String(recording));
   recordLabel.textContent = recording ? "Stop recording" : "Record";
   recordButton.disabled = processing;
+  literalModeToggle.disabled = recording || processing;
   timer.hidden = !recording;
 }
 
@@ -56,6 +65,28 @@ function updateTimer() {
   const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
   const seconds = String(elapsedSeconds % 60).padStart(2, "0");
   timer.textContent = `${minutes}:${seconds}`;
+}
+
+function restoreLiteralModePreference() {
+  try {
+    return parseLiteralModePreference(window.localStorage.getItem(LITERAL_MODE_STORAGE_KEY));
+  } catch {
+    return true;
+  }
+}
+
+function saveLiteralModePreference(enabled) {
+  try {
+    window.localStorage.setItem(LITERAL_MODE_STORAGE_KEY, String(enabled));
+  } catch {
+    // Extension storage can be unavailable in unusual private browsing setups.
+  }
+}
+
+function updateLiteralModeDescription() {
+  literalModeDescription.textContent = literalModeToggle.checked
+    ? "Punctuation words stay exactly as spoken."
+    : "Spoken punctuation and symbols are converted into characters.";
 }
 
 function findSupportedMimeType() {
@@ -79,6 +110,8 @@ async function startRecording() {
     setStatus("Microphone recording is not supported in this browser.", "error");
     return;
   }
+
+  literalModeForRecording = literalModeToggle.checked;
 
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -165,7 +198,8 @@ async function processRecording(mimeType) {
     }
 
     setStatus(modelReady ? "Transcribing locally…" : "Loading the speech model, then transcribing…");
-    const text = await requestTranscription(audio);
+    const rawText = await requestTranscription(audio);
+    const text = formatDictationText(rawText, literalModeForRecording);
     transcript.value = appendTranscript(transcript.value, text);
     updateCharacterCount();
 
@@ -205,6 +239,11 @@ copyButton.addEventListener("click", async () => {
       "error"
     );
   }
+});
+
+literalModeToggle.addEventListener("change", () => {
+  saveLiteralModePreference(literalModeToggle.checked);
+  updateLiteralModeDescription();
 });
 
 transcript.addEventListener("input", updateCharacterCount);
@@ -272,6 +311,8 @@ window.addEventListener("beforeunload", () => {
   worker.terminate();
 });
 
+literalModeToggle.checked = restoreLiteralModePreference();
+updateLiteralModeDescription();
 updateCharacterCount();
 setMode("loading");
 worker.postMessage({ type: "load" });
