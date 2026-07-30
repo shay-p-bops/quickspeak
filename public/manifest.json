@@ -2,8 +2,14 @@
   "manifest_version": 3,
   "name": "Quickspeak",
   "description": "Record speech locally or communicate with an LLM using a session-only API key.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "minimum_chrome_version": "113",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": [
     "contextMenus",
     "clipboardWrite",
@@ -18,7 +24,13 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Open Quickspeak"
+    "default_title": "Open Quickspeak",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; object-src 'self'"

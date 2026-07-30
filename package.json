@@ -1,6 +1,6 @@
 {
   "name": "quickspeak",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "A browser extension for local speech-to-text and user-configured LLM communication.",
   "type": "module",
